@@ -3,73 +3,76 @@ let activeTab = 'tab1';
 
 async function loadDashboard(tab) {
     const container = document.getElementById('dashboard');
-    const syncDot = document.getElementById('sync-dot');
-    
-    syncDot.style.opacity = '0.3'; // Visual feedback
+    container.innerHTML = `<div class="loader">جاري سحب البيانات من Google Sheets...</div>`;
     
     try {
         const response = await fetch(`${SCRIPT_URL}?tab=${tab}`);
         const data = await response.text();
+        
+        if (!data || data.includes('Error')) {
+            container.innerHTML = `<div class="loader">حدث خطأ في رابط السكريبت أو البيانات فارغة.</div>`;
+            return;
+        }
+
         renderTables(data);
-        syncDot.style.opacity = '1';
     } catch (error) {
-        container.innerHTML = `<div class="loader">Error loading data. Please check your connection.</div>`;
+        container.innerHTML = `<div class="loader">فشل الاتصال: تأكدي من نشر السكريبت كـ Anyone.</div>`;
+        console.error(error);
     }
 }
 
 function renderTables(csvData) {
     const container = document.getElementById('dashboard');
-    container.innerHTML = ''; // Clear previous
+    container.innerHTML = ''; 
     
+    // تقسيم البيانات لصفوف
     const rows = csvData.split('\n').map(r => r.split(','));
-    let currentTableRows = [];
-    let tableTitle = "Default Table";
+    
+    if (rows.length < 2) {
+        container.innerHTML = `<div class="loader">البيانات التي وصلت غير كافية للعرض.</div>`;
+        return;
+    }
 
-    rows.forEach((row, index) => {
-        const rowString = row.join('').trim();
-        
-        // Detect Table Title (e.g., lines starting with icons)
-        if (rowString.includes('B2C')) {
-            if (currentTableRows.length > 0) createHTMLTable(tableTitle, currentTableRows);
-            tableTitle = row.find(cell => cell.includes('B2C')) || "Data Table";
-            currentTableRows = [];
-        } 
-        // Skip empty rows and separator lines
-        else if (rowString !== "" && !rowString.startsWith(',,')) {
-            currentTableRows.push(row);
-        }
+    let tableHTML = `
+        <div class="table-card">
+            <div class="table-header">Almentor Error Tracker Data</div>
+            <div class="table-responsive">
+                <table id="mainTable">
+                    <thead><tr id="headerRow"></tr></thead>
+                    <tbody id="tableBody"></tbody>
+                </table>
+            </div>
+        </div>
+    `;
+    container.innerHTML = tableHTML;
+
+    const headerRow = document.getElementById('headerRow');
+    const tableBody = document.getElementById('tableBody');
+
+    // البحث عن أول صف يحتوي على بيانات حقيقية ليكون هو العنوان
+    let headerIndex = rows.findIndex(r => r.join('').trim().length > 10);
+    if (headerIndex === -1) headerIndex = 0;
+
+    // رسم العناوين
+    rows[headerIndex].forEach(col => {
+        const th = document.createElement('th');
+        th.innerText = col.replace(/"/g, ''); // تنظيف علامات التنصيص
+        headerRow.appendChild(th);
     });
 
-    // Create the last table
-    if (currentTableRows.length > 0) {
-        createHTMLTable(tableTitle, currentTableRows);
+    // رسم الصفوف
+    for (let i = headerIndex + 1; i < rows.length; i++) {
+        const rowData = rows[i];
+        if (rowData.join('').trim().length < 2) continue; // تخطي الصفوف الفارغة
+
+        const tr = document.createElement('tr');
+        rowData.forEach(cell => {
+            const td = document.createElement('td');
+            td.innerText = cell.replace(/"/g, '');
+            tr.appendChild(td);
+        });
+        tableBody.appendChild(tr);
     }
-}
-
-function createHTMLTable(title, dataRows) {
-    const container = document.getElementById('dashboard');
-    const card = document.createElement('div');
-    card.className = 'table-card';
-    
-    let tableHTML = `
-        <div class="table-header">${title}</div>
-        <div class="table-responsive">
-            <table>
-                <thead>
-                    <tr>${dataRows[1].map(h => `<th>${h || ''}</th>`).join('')}</tr>
-                </thead>
-                <tbody>
-    `;
-
-    // Add data rows starting from actual data (skipping headers)
-    for (let i = 2; i < dataRows.length; i++) {
-        if (dataRows[i].join('').trim() === "") continue;
-        tableHTML += `<tr>${dataRows[i].map(c => `<td>${c || ''}</td>`).join('')}</tr>`;
-    }
-
-    tableHTML += `</tbody></table></div>`;
-    card.innerHTML = tableHTML;
-    container.appendChild(card);
 }
 
 function changeTab(tab) {
@@ -79,7 +82,5 @@ function changeTab(tab) {
     loadDashboard(tab);
 }
 
-// Start
 loadDashboard('tab1');
-// Auto refresh every 60 seconds
 setInterval(() => loadDashboard(activeTab), 60000);
